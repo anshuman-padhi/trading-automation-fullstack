@@ -1,0 +1,92 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+env/
+ENV/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# AWS
+.aws/
+aws-access-keys.csv
+*.pem
+
+# Credentials & Secrets
+.env
+.env.local
+AWS_CREDENTIALS.txt
+credentials.json
+secrets.yaml
+
+# Data
+data/raw/*
+data/processed/*
+data/backups/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/backups/.gitkeep
+*.csv
+*.parquet
+
+# Logs
+logs/*
+!logs/.gitkeep
+*.log
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Docker
+docker-compose.override.yml
+
+# Node (for frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.next/
+out/
+build/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# UV specific
+.venv/
+uv.lock
+.python-version
