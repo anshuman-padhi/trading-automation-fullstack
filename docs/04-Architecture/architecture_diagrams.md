@@ -113,7 +113,7 @@ classDiagram
     StockScreener --> StockSelector : passes candidates
     StockSelector --> PositionSizer : calculates size for selected
     
-    PositionSizer -.-> TradeJournal : potential link
+    PositionSizer ..> TradeJournal : potential link
 ```
 
 ## Note on Data Flow
