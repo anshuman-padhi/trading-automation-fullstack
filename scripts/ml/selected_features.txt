@@ -1,0 +1,15 @@
+spy_rsi_market
+dist_52w_high
+dist_52w_low
+mom_6m
+atr_pct
+mom_3m
+vol_spike
+bb_width
+realized_vol
+rs_rel
+rsi
+sma200_dist
+sma50_dist
+vol_ratio
+mom_1m

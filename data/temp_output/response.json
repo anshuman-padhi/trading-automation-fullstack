@@ -1,0 +1,1 @@
+{"statusCode": 200, "body": "{\"message\": \"Market analysis completed\", \"environment\": \"Choppy\", \"s3_location\": \"s3://trading-automation-data-904583676284/market_analysis/2026/01/01/analysis.json\"}"}

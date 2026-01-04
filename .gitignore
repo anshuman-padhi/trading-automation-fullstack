@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 *.so
+*.zip
+*.joblib
 .Python
 build/
 develop-eggs/
@@ -90,3 +92,8 @@ Thumbs.db
 .venv/
 uv.lock
 .python-version
+
+# Temporary Test Outputs
+response_*.json
+lambda_logs*.txt
+

@@ -1,227 +1,231 @@
 """
-AWS Lambda handler for Module 6: Alerts & Monitoring
-
-- Triggered by EventBridge every 5 minutes
-- Loads current positions & account state (placeholder: from S3)
-- Runs AlertsMonitor checks (positions, circuit breaker, streaks)
-- Sends email notifications via SES for new HIGH/CRITICAL alerts
+AWS Lambda Handler: Alerts & Monitoring
+Triggered: Every 5 minutes via EventBridge
+Purpose: Monitor positions and send critical alerts
 """
-
-import os
 import json
+import os
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, List
-
+from datetime import datetime
 import boto3
 
-# Import your module 6 core logic
-from src.modules.alerts_monitor import (
-    AlertsMonitor,
-    Position,
-    AlertSeverity,
-    AlertType,
-)
+# Import core module
+import sys
+sys.path.insert(0, '/opt/python')
+from src.modules.alerts_monitor import AlertsMonitor, Position, AlertSeverity
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
-# ==========
-# ENV VARS
-# ==========
+# AWS clients
+s3_client = boto3.client('s3')
+ses_client = boto3.client('ses')
 
-SES_REGION = os.getenv("SES_REGION", "us-east-1")
-ALERTS_FROM_EMAIL = os.getenv("ALERTS_FROM_EMAIL", "alerts@example.com")
-ALERTS_TO_EMAIL = os.getenv("ALERTS_TO_EMAIL", "you@example.com")
-POSITIONS_S3_BUCKET = os.getenv("POSITIONS_S3_BUCKET", "your-positions-bucket")
-POSITIONS_S3_KEY = os.getenv("POSITIONS_S3_KEY", "positions/active_positions.json")
-ACCOUNT_STATE_S3_BUCKET = os.getenv("ACCOUNT_STATE_S3_BUCKET", "your-account-bucket")
-ACCOUNT_STATE_S3_KEY = os.getenv("ACCOUNT_STATE_S3_KEY", "account/account_state.json")
-
-ses_client = boto3.client("ses", region_name=SES_REGION)
-s3_client = boto3.client("s3")
+# Environment variables
+S3_BUCKET = os.getenv('S3_BUCKET', 'trading-automation-data')
+FROM_EMAIL = os.getenv('FROM_EMAIL', 'alerts@example.com')
+TO_EMAIL = os.getenv('TO_EMAIL', 'your-email@example.com')
+POSITIONS_FILE = os.getenv('POSITIONS_FILE', 'positions/active_positions.json')
+ACCOUNT_STATE_FILE = os.getenv('ACCOUNT_STATE_FILE', 'account/account_state.json')
 
 
-# ==========
-# HELPERS
-# ==========
-
-def load_json_from_s3(bucket: str, key: str) -> Dict[str, Any]:
-    """Load JSON object from S3 (helper)."""
-    try:
-        resp = s3_client.get_object(Bucket=bucket, Key=key)
-        data = resp["Body"].read()
-        return json.loads(data)
-    except s3_client.exceptions.NoSuchKey:
-        logger.warning(f"S3 object not found: s3://{bucket}/{key}")
-        return {}
-    except Exception as e:
-        logger.error(f"Error loading s3://{bucket}/{key}: {e}", exc_info=True)
-        return {}
-
-
-def send_alert_email(subject: str, body_text: str, body_html: str) -> None:
-    """Send alert via SES."""
-    try:
-        ses_client.send_email(
-            Source=ALERTS_FROM_EMAIL,
-            Destination={"ToAddresses": [ALERTS_TO_EMAIL]},
-            Message={
-                "Subject": {"Data": subject, "Charset": "UTF-8"},
-                "Body": {
-                    "Text": {"Data": body_text, "Charset": "UTF-8"},
-                    "Html": {"Data": body_html, "Charset": "UTF-8"},
-                },
-            },
-        )
-        logger.info(f"Alert email sent to {ALERTS_TO_EMAIL}: {subject}")
-    except Exception as e:
-        logger.error(f"Failed to send SES email: {e}", exc_info=True)
-
-
-def build_email_for_alerts(alerts: List[Dict[str, Any]]) -> (str, str, str):
-    """Build subject, text body, html body for a batch of alerts."""
-    if not alerts:
-        return "", "", ""
-
-    # Use highest severity for subject
-    severity_order = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
-    highest = sorted(alerts, key=lambda a: severity_order.index(a["severity"]))[0]
-
-    subject = f"[{highest['severity']}] Trading Alerts ({len(alerts)} new)"
-
-    lines = []
-    for a in alerts:
-        lines.append(
-            f"[{a['severity']}] {a['title']} - {a['message']} "
-            f"(ID: {a['alert_id']}, Time: {a['timestamp']})"
-        )
-
-    body_text = "New trading alerts:\n\n" + "\n".join(lines)
-
-    # Simple HTML version
-    html_items = []
-    for a in alerts:
-        html_items.append(
-            f"<li><strong>[{a['severity']}] {a['title']}</strong><br/>"
-            f"{a['message']}<br/>"
-            f"<em>ID: {a['alert_id']} | Time: {a['timestamp']}</em></li>"
-        )
-
-    body_html = (
-        "<html><body>"
-        "<h2>New Trading Alerts</h2>"
-        "<ul>"
-        + "".join(html_items) +
-        "</ul>"
-        "</body></html>"
-    )
-
-    return subject, body_text, body_html
-
-
-# ==========
-# LAMBDA HANDLER
-# ==========
-
-def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+def lambda_handler(event, context):
     """
-    Entry point for AWS Lambda.
+    Main Lambda handler for alerts monitoring
 
-    EventBridge schedule: every 5 minutes.
-    Responsibilities:
-    - Load current positions & account balance from S3 (or other data source)
-    - Run AlertsMonitor checks
-    - Email any new HIGH/CRITICAL alerts
-    - Return summary for logging/monitoring
+    Returns:
+        dict: Alert summary and any critical alerts
     """
-    logger.info(f"alerts_handler invoked at {datetime.utcnow().isoformat()}Z")
-    logger.info(f"Event: {json.dumps(event)}")
+    logger.info(f"Alerts Monitor Lambda triggered at {datetime.utcnow().isoformat()}Z")
 
-    # 1) Load account state
-    account_state = load_json_from_s3(ACCOUNT_STATE_S3_BUCKET, ACCOUNT_STATE_S3_KEY)
-    account_balance = float(account_state.get("account_balance", 100000.0))
+    try:
+        # Load account state
+        account_state = load_account_state()
+        account_balance = account_state.get('account_balance', 100000.0)
 
-    # 2) Initialize AlertsMonitor
-    monitor = AlertsMonitor(account_balance=account_balance)
+        # Initialize monitor
+        monitor = AlertsMonitor(account_balance=account_balance)
 
-    # 3) Load positions
-    positions_data = load_json_from_s3(POSITIONS_S3_BUCKET, POSITIONS_S3_KEY)
-    positions_list = positions_data.get("positions", [])
+        # Load active positions
+        positions = load_active_positions()
+        logger.info(f"Monitoring {len(positions)} active positions")
 
-    for p in positions_list:
-        try:
-            pos = Position(
-                trade_id=p["trade_id"],
-                symbol=p["symbol"],
-                entry_price=float(p["entry_price"]),
-                current_price=float(p["current_price"]),
-                shares=int(p["shares"]),
-                entry_date=p["entry_date"],   # "YYYY-MM-DD HH:MM:SS"
-                initial_stop=float(p["initial_stop"]),
-                target_price=float(p["target_price"]) if p.get("target_price") else None,
-                setup_grade=p.get("setup_grade", "B"),
-            )
-            monitor.add_position(pos)
-        except KeyError as e:
-            logger.error(f"Missing key in position data: {e} | data={p}")
-        except Exception as e:
-            logger.error(f"Error creating Position from data {p}: {e}", exc_info=True)
+        for pos_data in positions:
+            try:
+                position = Position(
+                    trade_id=pos_data['trade_id'],
+                    symbol=pos_data['symbol'],
+                    entry_price=float(pos_data['entry_price']),
+                    current_price=float(pos_data['current_price']),
+                    shares=int(pos_data['shares']),
+                    entry_date=pos_data['entry_date'],
+                    initial_stop=float(pos_data['initial_stop']),
+                    target_price=float(pos_data.get('target_price', 0)) or None,
+                    setup_grade=pos_data.get('setup_grade', 'B')
+                )
+                monitor.add_position(position)
+            except Exception as e:
+                logger.warning(f"Failed to add position {pos_data.get('symbol')}: {str(e)}")
 
-    # 4) Run position-based alerts
-    monitor.check_position_alerts()
+        # Run all monitoring checks
+        logger.info("Checking position alerts...")
+        monitor.check_position_alerts()
 
-    # 5) Run circuit breaker checks
-    monitor.check_circuit_breaker()
+        logger.info("Checking circuit breaker...")
+        monitor.check_circuit_breaker()
 
-    # 6) Win/loss streak (if you save recent trades in account_state)
-    recent_trades = account_state.get("recent_trades", [])
-    if recent_trades:
+        logger.info("Checking trade streaks...")
+        recent_trades = account_state.get('recent_trades', [])
         monitor.check_trade_streak(recent_trades)
 
-    # 7) Collect active alerts
-    active_alerts = monitor.get_active_alerts()
+        # Get alert summary
+        summary = monitor.get_alert_summary()
+        logger.info(f"Alert summary: {summary}")
 
-    # Convert Alert dataclasses to dicts for SES & response
-    alert_dicts: List[Dict[str, Any]] = []
-    for a in active_alerts:
-        alert_dicts.append(
-            {
-                "alert_id": a.alert_id,
-                "type": a.alert_type.value,
-                "severity": a.severity.value,
-                "title": a.title,
-                "message": a.message,
-                "timestamp": a.timestamp,
-                "symbol": a.symbol,
-                "trade_id": a.trade_id,
-                "value": a.value,
-                "threshold": a.threshold,
-            }
+        # Get critical alerts
+        critical_alerts = monitor.get_critical_alerts()
+        high_alerts = [a for a in monitor.get_active_alerts() if a.severity == AlertSeverity.HIGH]
+
+        # Send email for critical/high alerts
+        if critical_alerts or high_alerts:
+            email_subject = f"[ALERT] Trading System Alerts - {len(critical_alerts)} Critical, {len(high_alerts)} High"
+            email_body = format_alerts_email(critical_alerts, high_alerts)
+            send_email(email_subject, email_body)
+
+        # Save alert summary to S3
+        alert_data = {
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'summary': summary,
+            'critical_alerts': [format_alert_dict(a) for a in critical_alerts],
+            'high_alerts': [format_alert_dict(a) for a in high_alerts],
+            'circuit_breaker_active': monitor.circuit_breaker.stop_trading
+        }
+
+        s3_key = f"alerts/{datetime.utcnow().strftime('%Y/%m/%d')}/alerts_{datetime.utcnow().strftime('%H%M%S')}.json"
+
+        s3_client.put_object(
+            Bucket=S3_BUCKET,
+            Key=s3_key,
+            Body=json.dumps(alert_data, indent=2),
+            ContentType='application/json'
         )
 
-    # 8) Email only new HIGH/CRITICAL alerts (simple: all active HIGH/CRITICAL)
-    important_alerts = [
-        a for a in alert_dicts
-        if a["severity"] in ("CRITICAL", "HIGH")
-    ]
+        return {
+            'statusCode': 200,
+            'body': json.dumps({
+                'message': 'Alerts monitoring completed',
+                'summary': summary,
+                'critical_count': len(critical_alerts),
+                'high_count': len(high_alerts),
+                's3_location': f's3://{S3_BUCKET}/{s3_key}'
+            })
+        }
 
-    if important_alerts:
-        subject, body_text, body_html = build_email_for_alerts(important_alerts)
-        if subject:
-            send_alert_email(subject, body_text, body_html)
+    except Exception as e:
+        logger.error(f"Error in alerts monitoring: {str(e)}", exc_info=True)
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
 
-    # 9) Build summary for logs / CloudWatch / debugging
-    summary = monitor.get_alert_summary()
-    logger.info(f"Alerts summary: {json.dumps(summary)}")
 
+def load_account_state():
+    """Load account state from S3"""
+    try:
+        response = s3_client.get_object(Bucket=S3_BUCKET, Key=ACCOUNT_STATE_FILE)
+        data = json.loads(response['Body'].read().decode('utf-8'))
+        return data
+    except s3_client.exceptions.NoSuchKey:
+        logger.warning("No account state file found")
+        return {'account_balance': 100000.0, 'recent_trades': []}
+
+
+def load_active_positions():
+    """Load active positions from S3"""
+    try:
+        response = s3_client.get_object(Bucket=S3_BUCKET, Key=POSITIONS_FILE)
+        data = json.loads(response['Body'].read().decode('utf-8'))
+        return data.get('positions', [])
+    except s3_client.exceptions.NoSuchKey:
+        logger.warning("No positions file found")
+        return []
+
+
+def format_alert_dict(alert):
+    """Convert Alert object to dictionary"""
     return {
-        "statusCode": 200,
-        "body": json.dumps(
-            {
-                "message": "Alerts handler executed",
-                "summary": summary,
-                "alerts": alert_dicts,
-            }
-        ),
+        'alert_id': alert.alert_id,
+        'type': alert.alert_type.value,
+        'severity': alert.severity.value,
+        'title': alert.title,
+        'message': alert.message,
+        'timestamp': alert.timestamp,
+        'symbol': alert.symbol,
+        'trade_id': alert.trade_id,
+        'value': alert.value,
+        'threshold': alert.threshold
     }
+
+
+def format_alerts_email(critical_alerts, high_alerts):
+    """Format alerts as email"""
+    report = f"""
+TRADING SYSTEM ALERTS
+{'=' * 70}
+Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}
+
+"""
+
+    if critical_alerts:
+        report += f"""
+🔴 CRITICAL ALERTS ({len(critical_alerts)}):
+{'=' * 70}
+"""
+        for alert in critical_alerts:
+            report += f"""
+Alert ID: {alert.alert_id}
+Title: {alert.title}
+Message: {alert.message}
+Symbol: {alert.symbol or 'N/A'}
+Time: {alert.timestamp}
+---
+"""
+
+    if high_alerts:
+        report += f"""
+🟠 HIGH PRIORITY ALERTS ({len(high_alerts)}):
+{'=' * 70}
+"""
+        for alert in high_alerts:
+            report += f"""
+Alert ID: {alert.alert_id}
+Title: {alert.title}
+Message: {alert.message}
+Symbol: {alert.symbol or 'N/A'}
+Time: {alert.timestamp}
+---
+"""
+
+    report += f"""
+{'=' * 70}
+This is an automated alert from your Trading System.
+Review immediately and take appropriate action.
+"""
+
+    return report
+
+
+def send_email(subject, body):
+    """Send email via SES"""
+    try:
+        ses_client.send_email(
+            Source=FROM_EMAIL,
+            Destination={'ToAddresses': [TO_EMAIL]},
+            Message={
+                'Subject': {'Data': subject, 'Charset': 'UTF-8'},
+                'Body': {'Text': {'Data': body, 'Charset': 'UTF-8'}}
+            }
+        )
+        logger.info(f"Alert email sent to {TO_EMAIL}")
+    except Exception as e:
+        logger.error(f"Failed to send email: {str(e)}", exc_info=True)

@@ -1,0 +1,49 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: IAM roles for trading automation Lambda functions
+
+Parameters:
+  S3BucketName:
+    Type: String
+    Description: S3 bucket name for trading data
+
+Resources:
+  LambdaTradingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: lambda-trading-automation-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: TradingAutomationPermissions
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource:
+                  - Fn::Sub: "arn:aws:s3:::${S3BucketName}"
+                  - Fn::Sub: "arn:aws:s3:::${S3BucketName}/*"
+              - Effect: Allow
+                Action:
+                  - ses:SendEmail
+                  - ses:SendRawEmail
+                Resource: "*"
+
+Outputs:
+  LambdaRoleArn:
+    Description: ARN of Lambda execution role
+    Value:
+      Fn::GetAtt: [LambdaTradingRole, Arn]
+    Export:
+      Name:
+        Fn::Sub: "${AWS::StackName}-LambdaRoleArn"

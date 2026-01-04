@@ -10,8 +10,14 @@ load_dotenv()
 
 # Project paths
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-DATA_DIR = PROJECT_ROOT / "data"
-LOGS_DIR = PROJECT_ROOT / "logs"
+
+# Detect if running in Lambda
+if os.getenv("AWS_LAMBDA_FUNCTION_NAME"):
+    DATA_DIR = Path("/tmp/data")
+    LOGS_DIR = Path("/tmp/logs")
+else:
+    DATA_DIR = PROJECT_ROOT / "data"
+    LOGS_DIR = PROJECT_ROOT / "logs"
 
 # Create directories if they don't exist
 DATA_DIR.mkdir(exist_ok=True)
@@ -19,8 +25,16 @@ LOGS_DIR.mkdir(exist_ok=True)
 
 # AWS Configuration
 AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
-S3_DATA_BUCKET = os.getenv("S3_DATA_BUCKET", "trading-automation-data")
+S3_DATA_BUCKET = os.getenv("S3_DATA_BUCKET", os.getenv("S3_BUCKET", "trading-automation-data-904583676284"))
+S3_BUCKET = S3_DATA_BUCKET # Alias for backward compatibility
 S3_BACKUP_BUCKET = os.getenv("S3_BACKUP_BUCKET", "trading-automation-backups")
+
+# Alpaca Configuration
+def get_alpaca_api_key() -> str:
+    return os.getenv("ALPACA_API_KEY", "")
+
+def get_alpaca_secret_key() -> str:
+    return os.getenv("ALPACA_SECRET_KEY", "")
 
 # Email Configuration
 NOTIFICATION_EMAIL = os.getenv("NOTIFICATION_EMAIL", "your-email@example.com")
