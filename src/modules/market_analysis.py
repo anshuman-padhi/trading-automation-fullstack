@@ -359,11 +359,18 @@ class MarketAnalyzer:
     def analyze_vix(self) -> Dict:
         """Analyze VIX volatility index"""
         try:
+            import os
+            import boto3
+            import json
+            import yfinance as yf
+            import requests
+            from src.config import settings
+            
+            # Setup Cache Dir for yfinance (writeable)
+            os.environ["YFINANCE_CACHE_DIR"] = "/tmp"
+
             # 1. Try S3 Cache first (Most Robust)
             try:
-                import boto3
-                import json
-                from src.config import settings
                 s3 = boto3.client('s3')
                 # Use bucket from env or settings
                 bucket = os.getenv("S3_BUCKET", settings.S3_BUCKET)
@@ -387,26 +394,15 @@ class MarketAnalyzer:
                      return {
                         "current_vix": round(float(current_vix), 2),
                         "status": status,
-                        "fear_level": status, # simple mapping
+                        "fear_level": status,
                         "explanation": explanation
                      }
             except Exception as e:
                 logger.warning(f"S3 VIX Cache load failed: {e}")
-
-            # 2. Setup Cache Dir for yfinance (writeable)
-            import os
-            os.environ["YFINANCE_CACHE_DIR"] = "/tmp"
             
-            # Use yfinance for VIX as it's an index (Alpaca often lacks ^VIX)
-            import yfinance as yf
-            import requests
-
-            session = requests.Session()
-            session.headers.update({
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            })
-
-            vix = yf.Ticker("^VIX", session=session)
+            # 2. Use yfinance for VIX (NO Session, let YF handle it)
+            # YF recent versions manage their own sessions better or reject requests.Session
+            vix = yf.Ticker("^VIX")
             df = vix.history(period="1mo")
             
             # Fallback: Direct Request if DF empty
@@ -417,6 +413,11 @@ class MarketAnalyzer:
             else:
                 logger.warning("VIX yfinance data empty. Trying Direct API...")
                 try:
+                    # Create session JUST for Direct API
+                    session = requests.Session()
+                    session.headers.update({
+                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                    })
                     url = "https://query2.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d"
                     r = session.get(url, timeout=5)
                     if r.status_code == 200:
