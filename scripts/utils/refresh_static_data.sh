@@ -2,6 +2,7 @@
 # Refresh Static Data (VIX and Sectors) to S3
 # Run this script periodically (e.g., weekly or before manual report triggers) 
 # if scraping on Lambda is blocked.
+# usage: ./scripts/utils/refresh_static_data.sh (from project root)
 
 set -e
 
