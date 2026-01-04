@@ -8,30 +8,32 @@ The system operates as a serverless application on AWS.
 **Key Update (Jan 2026)**: A "Hybrid Data Fetching" strategy was implemented to resolve IP blocking issues for VIX and Sector data. Static data is now fetched locally and pushed to S3, while dynamic data is processed by Lambda.
 
 ```mermaid
-graph TD
-    subgraph "Local Environment (User Machine/EC2)"
+graph LR
+    subgraph LocalEnv ["Local Environment"]
         LocalScript["scripts/utils/refresh_static_data.sh"]
-        LocalScript -->|Uploads JSON| S3
     end
 
-    subgraph "External Data Providers"
+    subgraph Providers ["External Data Providers"]
+        direction TB
         Alpaca["Alpaca Market Data API"]
         Yahoo["Yahoo Finance API"]
         YahooFallback["Direct API Fallback"]
     end
 
-    subgraph "AWS Cloud (us-east-1)"
+    subgraph AWS ["AWS Cloud (us-east-1)"]
         EventBridge["Amazon EventBridge"]
-        
-        subgraph "Lambda Functions"
+
+        subgraph Funcs ["Lambda Functions"]
+            direction TB
             MarketAnalysis["Market Analysis Handler"]
             StockScreener["Stock Screener Handler"]
             Dashboard["Dashboard Handler"]
             MLTrainer["ML Trainer Handler"]
         end
         
-        subgraph "Storage (S3)"
-            S3["S3 Bucket: trading-automation-data"]
+        subgraph Storage ["Storage (S3)"]
+            direction TB
+            S3Bucket["S3 Bucket: trading-automation-data"]
             Sectors["sectors.json"]
             VIX["vix_latest.json"]
             Reports["Reports/JSON Output"]
@@ -40,31 +42,35 @@ graph TD
         SES["Amazon SES (Email)"]
     end
 
-    %% Event Triggers
-    EventBridge -->|Weekly Schedule| MarketAnalysis
-    EventBridge -->|Daily Schedule| StockScreener
-    EventBridge -->|Daily Schedule| Dashboard
-    EventBridge -->|Weekly Schedule| MLTrainer
+    %% Data Upload flow
+    LocalScript -->|Upload JSON| S3Bucket
 
-    %% Data Flow
-    MarketAnalysis -->|Read Cache| VIX
-    MarketAnalysis -->|Fallback Request| Yahoo
-    MarketAnalysis -->|Fallback Request| YahooFallback
-    
-    StockScreener -->|Read Cache| Sectors
-    StockScreener -->|Request Prices| Alpaca
-    
-    MLTrainer -->|Read Data| S3
-    Dashboard -->|Read Stats| S3
+    %% Trigger Flow
+    EventBridge -->|Schedule| MarketAnalysis
+    EventBridge -->|Schedule| StockScreener
+    EventBridge -->|Schedule| Dashboard
+    EventBridge -->|Schedule| MLTrainer
 
-    %% Output
-    MarketAnalysis -->|Write Report| Reports
-    StockScreener -->|Write Report| Reports
-    Reports -->|Send Email| SES
+    %% Data Fetch Flow
+    MarketAnalysis -->|Reads| VIX
+    MarketAnalysis -->|Fallback| Yahoo
+    MarketAnalysis -->|Fallback| YahooFallback
     
-    %% Cache Link
-    S3 -- contains --> Sectors
-    S3 -- contains --> VIX
+    StockScreener -->|Reads| Sectors
+    StockScreener -->|Prices| Alpaca
+    
+    Dashboard -->|Stats| S3Bucket
+    MLTrainer -->|Train Data| S3Bucket
+
+    %% Cache Association
+    S3Bucket -.- Sectors
+    S3Bucket -.- VIX
+    S3Bucket -.- Reports
+
+    %% Output Flow
+    MarketAnalysis -->|Save| Reports
+    StockScreener -->|Save| Reports
+    Reports -->|Send| SES
 ```
 
 ## 2. Internal Building Blocks (Python Modules)
