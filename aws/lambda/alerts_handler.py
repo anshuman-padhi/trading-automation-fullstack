@@ -88,9 +88,10 @@ def lambda_handler(event, context):
 
         # Send email for critical/high alerts
         if critical_alerts or high_alerts:
-            email_subject = f"[ALERT] Trading System Alerts - {len(critical_alerts)} Critical, {len(high_alerts)} High"
+            email_subject = f"[ALERT] QuantZ Alerts - {len(critical_alerts)} Critical, {len(high_alerts)} High"
             email_body = format_alerts_email(critical_alerts, high_alerts)
-            send_email(email_subject, email_body)
+            email_body_html = format_alerts_html(critical_alerts, high_alerts)
+            send_email(email_subject, email_body, email_body_html)
 
         # Save alert summary to S3
         alert_data = {
@@ -168,7 +169,7 @@ def format_alert_dict(alert):
 
 
 def format_alerts_email(critical_alerts, high_alerts):
-    """Format alerts as email"""
+    """Format alerts as plain text"""
     report = f"""
 TRADING SYSTEM ALERTS
 {'=' * 70}
@@ -208,23 +209,79 @@ Time: {alert.timestamp}
 
     report += f"""
 {'=' * 70}
-This is an automated alert from your Trading System.
+This is an automated alert from your QuantZ Trading Lab.
 Review immediately and take appropriate action.
 """
-
     return report
 
+def format_alerts_html(critical_alerts, high_alerts):
+    """Format alerts as HTML"""
+    critical_rows = ""
+    for alert in critical_alerts:
+        critical_rows += f"""
+        <div style="border-left: 4px solid #dc3545; padding: 10px; margin-bottom: 15px; background-color: #fff; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                <strong style="color: #dc3545;">{alert.title}</strong>
+                <span style="color: #6c757d; font-size: 0.9em;">{alert.timestamp}</span>
+            </div>
+            <p style="margin: 5px 0;">{alert.message}</p>
+            <div style="font-size: 0.9em; color: #6c757d; margin-top: 5px;">
+                Symbol: <strong>{alert.symbol or 'N/A'}</strong> | ID: {alert.alert_id}
+            </div>
+        </div>
+        """
+        
+    high_rows = ""
+    for alert in high_alerts:
+        high_rows += f"""
+        <div style="border-left: 4px solid #ffc107; padding: 10px; margin-bottom: 15px; background-color: #fff; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                <strong style="color: #d39e00;">{alert.title}</strong>
+                <span style="color: #6c757d; font-size: 0.9em;">{alert.timestamp}</span>
+            </div>
+            <p style="margin: 5px 0;">{alert.message}</p>
+            <div style="font-size: 0.9em; color: #6c757d; margin-top: 5px;">
+                Symbol: <strong>{alert.symbol or 'N/A'}</strong> | ID: {alert.alert_id}
+            </div>
+        </div>
+        """
 
-def send_email(subject, body):
+    html = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f4f4f4; padding: 20px;">
+        <div style="max-width: 800px; margin: 0 auto; background-color: #fff; padding: 20px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1);">
+            <h2 style="color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-top: 0;">Trading System Alerts</h2>
+            <p style="color: #6c757d; font-size: 0.9em;">Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}</p>
+            
+            {f'<h3 style="color: #dc3545; margin-top: 20px;">🔴 Critical Alerts ({len(critical_alerts)})</h3>' + critical_rows if critical_alerts else ''}
+            
+            {f'<h3 style="color: #ffc107; margin-top: 20px;">🟠 High Priority Alerts ({len(high_alerts)})</h3>' + high_rows if high_alerts else ''}
+            
+            <p style="margin-top: 30px; font-size: 0.8em; color: #999; text-align: center;">
+                Automated Alert | QuantZ Trading Lab<br>
+                <em>Review immediately and take appropriate action.</em>
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+    return html
+
+
+def send_email(subject, body, body_html=None):
     """Send email via SES"""
     try:
+        message = {
+            'Subject': {'Data': subject, 'Charset': 'UTF-8'},
+            'Body': {'Text': {'Data': body, 'Charset': 'UTF-8'}}
+        }
+        if body_html:
+            message['Body']['Html'] = {'Data': body_html, 'Charset': 'UTF-8'}
+            
         ses_client.send_email(
             Source=FROM_EMAIL,
             Destination={'ToAddresses': [TO_EMAIL]},
-            Message={
-                'Subject': {'Data': subject, 'Charset': 'UTF-8'},
-                'Body': {'Text': {'Data': body, 'Charset': 'UTF-8'}}
-            }
+            Message=message
         )
         logger.info(f"Alert email sent to {TO_EMAIL}")
     except Exception as e:

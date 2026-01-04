@@ -103,7 +103,8 @@ def lambda_handler(event, context):
         if event.get('source') == 'aws.events':
             email_subject = f"Daily Performance Report - {datetime.utcnow().strftime('%Y-%m-%d')}"
             email_body = format_performance_email(summary_stats, monthly_stats)
-            send_email(email_subject, email_body)
+            email_body_html = format_performance_html(summary_stats, monthly_stats)
+            send_email(email_subject, email_body, email_body_html)
 
         return {
             'statusCode': 200,
@@ -191,16 +192,82 @@ Full dashboard available in S3.
     return report
 
 
-def send_email(subject, body):
+def format_performance_html(summary, monthly):
+    """Format performance stats as HTML"""
+    current_month = datetime.utcnow().strftime('%Y-%m')
+    month_stats = monthly.get(current_month)
+    
+    pnl_color = "#28a745" if summary['total_pnl'] >= 0 else "#dc3545"
+    
+    html = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+        <div style="max-width: 800px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 5px;">
+            <h2 style="color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px;">Daily Performance Dashboard</h2>
+            <p style="color: #7f8c8d;">Date: {datetime.utcnow().strftime('%Y-%m-%d')}</p>
+            
+            <div style="display: flex; justify-content: space-between; margin-bottom: 20px; background-color: #f8f9fa; padding: 20px; border-radius: 5px;">
+                <div style="text-align: center;">
+                    <div style="font-size: 0.9em; color: #6c757d;">Total P&L</div>
+                    <div style="font-size: 1.5em; font-weight: bold; color: {pnl_color};">${summary['total_pnl']:,.2f}</div>
+                    <div style="font-size: 0.8em; color: {pnl_color};">{summary['total_pnl_pct']:.2f}%</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 0.9em; color: #6c757d;">Win Rate</div>
+                    <div style="font-size: 1.5em; font-weight: bold;">{summary['win_rate']:.1f}%</div>
+                    <div style="font-size: 0.8em; color: #6c757d;">{summary['total_trades']} Trades</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 0.9em; color: #6c757d;">Profit Factor</div>
+                    <div style="font-size: 1.5em; font-weight: bold;">{summary['profit_factor']:.2f}</div>
+                </div>
+            </div>
+            
+            <div style="display: flex; justify-content: space-between; margin-bottom: 20px;">
+                <div style="width: 48%;">
+                    <h3 style="border-bottom: 1px solid #ddd; padding-bottom: 5px;">Key Metrics</h3>
+                    <ul style="list-style-type: none; padding-left: 0;">
+                        <li style="padding: 5px 0; border-bottom: 1px solid #eee;">Expectancy: <strong>${summary['expectancy']:.2f}</strong></li>
+                        <li style="padding: 5px 0; border-bottom: 1px solid #eee;">Avg Win: <strong style="color: #28a745;">${summary['avg_win']:,.2f}</strong></li>
+                        <li style="padding: 5px 0; border-bottom: 1px solid #eee;">Avg Loss: <strong style="color: #dc3545;">${summary['avg_loss']:,.2f}</strong></li>
+                        <li style="padding: 5px 0; border-bottom: 1px solid #eee;">Max Drawdown: <strong style="color: #dc3545;">${summary['max_drawdown']:,.2f} ({summary['max_drawdown_pct']:.1f}%)</strong></li>
+                    </ul>
+                </div>
+                
+                <div style="width: 48%;">
+                    <h3 style="border-bottom: 1px solid #ddd; padding-bottom: 5px;">Current Month ({current_month})</h3>
+                    {'<ul style="list-style-type: none; padding-left: 0;">' + 
+                      f'<li style="padding: 5px 0; border-bottom: 1px solid #eee;">Net Profit: <strong>${month_stats.net_profit:,.2f}</strong></li>' +
+                      f'<li style="padding: 5px 0; border-bottom: 1px solid #eee;">Return: <strong>{month_stats.return_pct:.2f}%</strong></li>' +
+                      f'<li style="padding: 5px 0; border-bottom: 1px solid #eee;">Win Rate: <strong>{month_stats.win_rate:.1f}%</strong></li>' +
+                      '</ul>' if month_stats else '<p>No trades yet this month.</p>'}
+                </div>
+            </div>
+            
+            <p style="font-size: 0.8em; color: #999; text-align: center; margin-top: 30px;">
+                Automated Report | QuantZ Trading Lab
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+    return html
+
+
+def send_email(subject, body, body_html=None):
     """Send email via SES"""
     try:
+        message = {
+            'Subject': {'Data': subject, 'Charset': 'UTF-8'},
+            'Body': {'Text': {'Data': body, 'Charset': 'UTF-8'}}
+        }
+        if body_html:
+            message['Body']['Html'] = {'Data': body_html, 'Charset': 'UTF-8'}
+            
         ses_client.send_email(
             Source=FROM_EMAIL,
             Destination={'ToAddresses': [TO_EMAIL]},
-            Message={
-                'Subject': {'Data': subject, 'Charset': 'UTF-8'},
-                'Body': {'Text': {'Data': body, 'Charset': 'UTF-8'}}
-            }
+            Message=message
         )
         logger.info("Email sent successfully")
     except Exception as e:

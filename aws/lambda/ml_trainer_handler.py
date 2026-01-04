@@ -96,6 +96,27 @@ def lambda_handler(event, context):
     logger.info(f"Model uploaded to s3://{bucket}/{model_key}")
     
     # 5. Notify
+    html_message = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+        <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 5px;">
+            <h2 style="color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px;">ML Model Retraining Report</h2>
+            <div style="background-color: #f8f9fa; padding: 15px; border-radius: 5px; margin-bottom: 20px;">
+                <ul style="list-style-type: none; padding-left: 0;">
+                    <li style="padding: 5px 0; border-bottom: 1px solid #eee;">Samples: <strong>{len(df)}</strong></li>
+                    <li style="padding: 5px 0; border-bottom: 1px solid #eee;">Accuracy: <strong>{accuracy:.1%}</strong></li>
+                    <li style="padding: 5px 0; border-bottom: 1px solid #eee;">Precision (&gt; {threshold}): <strong style="color: #28a745;">{precision:.1%}</strong></li>
+                    <li style="padding: 5px 0; border-bottom: 1px solid #eee;">High Conf Coverage: <strong>{coverage:.1%}</strong> ({len(high_conf_idx)} trades)</li>
+                </ul>
+            </div>
+            <p style="font-size: 0.8em; color: #999; text-align: center; margin-top: 30px;">
+                Automated Report | QuantZ Trading Lab
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+
     message = (
         f"ML Model Retrained Successfully.\n\n"
         f"Samples: {len(df)}\n"
@@ -109,8 +130,11 @@ def lambda_handler(event, context):
             Source=os.environ['FROM_EMAIL'],
             Destination={'ToAddresses': [os.environ['TO_EMAIL']]},
             Message={
-                'Subject': {'Data': 'ML Model Retraining Report'},
-                'Body': {'Text': {'Data': message}}
+                'Subject': {'Data': 'ML Model Retraining Report', 'Charset': 'UTF-8'},
+                'Body': {
+                    'Text': {'Data': message, 'Charset': 'UTF-8'},
+                    'Html': {'Data': html_message, 'Charset': 'UTF-8'}
+                }
             }
         )
     except Exception as e:

@@ -358,30 +358,106 @@ class MarketAnalyzer:
 
     def analyze_vix(self) -> Dict:
         """Analyze VIX volatility index"""
-        # Attempt to fetch VIX
         try:
-            df = self.data_fetcher.fetch_price_history('VIX', days=20)
-            
-            if df.empty:
-                logger.warning("VIX data not available.")
-                return {"current_vix": 0, "status": "Unknown", "fear_level": "Unknown"}
+            # 1. Try S3 Cache first (Most Robust)
+            try:
+                import boto3
+                import json
+                from src.config import settings
+                s3 = boto3.client('s3')
+                # Use bucket from env or settings
+                bucket = os.getenv("S3_BUCKET", settings.S3_BUCKET)
+                key = "min_data/vix_latest.json"
+                response = s3.get_object(Bucket=bucket, Key=key)
+                content = response['Body'].read().decode('utf-8')
+                vix_data = json.loads(content)
+                current_vix = vix_data.get('price', 0.0)
+                logger.info(f"Loaded VIX from S3 Cache: {current_vix}")
                 
-            current_vix = df['close'].iloc[-1]
+                if current_vix > 0:
+                     status = "Normal"
+                     explanation = "Volatility is within normal range (12-20). Standard trading rules apply."
+                     if current_vix > 20:
+                         status = "Elevated"
+                         explanation = "Volatility is elevated (>20). Reduce position sizes and tighten stops."
+                     elif current_vix < 12:
+                         status = "Low"
+                         explanation = "Volatility is very low (<12). Expect potential mean reversion/complacency."
+                         
+                     return {
+                        "current_vix": round(float(current_vix), 2),
+                        "status": status,
+                        "fear_level": status, # simple mapping
+                        "explanation": explanation
+                     }
+            except Exception as e:
+                logger.warning(f"S3 VIX Cache load failed: {e}")
+
+            # 2. Setup Cache Dir for yfinance (writeable)
+            import os
+            os.environ["YFINANCE_CACHE_DIR"] = "/tmp"
+            
+            # Use yfinance for VIX as it's an index (Alpaca often lacks ^VIX)
+            import yfinance as yf
+            import requests
+
+            session = requests.Session()
+            session.headers.update({
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            })
+
+            vix = yf.Ticker("^VIX", session=session)
+            df = vix.history(period="1mo")
+            
+            # Fallback: Direct Request if DF empty
+            current_vix = 0.0
+            
+            if not df.empty:
+                current_vix = df['Close'].iloc[-1]
+            else:
+                logger.warning("VIX yfinance data empty. Trying Direct API...")
+                try:
+                    url = "https://query2.finance.yahoo.com/v8/finance/chart/%5EVIX?interval=1d&range=5d"
+                    r = session.get(url, timeout=5)
+                    if r.status_code == 200:
+                        data = r.json()
+                        meta = data['chart']['result'][0]['meta']
+                        current_vix = meta['regularMarketPrice']
+                        logger.info(f"Direct API VIX: {current_vix}")
+                    else:
+                        logger.error(f"Direct API failed: {r.status_code}")
+                except Exception as e:
+                    logger.error(f"Direct API Exception: {e}")
+            
+            if current_vix == 0.0:
+                 logger.warning("VIX data not available from yfinance or direct.")
+                 return {"current_vix": 0.0, "status": "Unknown", "fear_level": "Unknown", "explanation": "Data unavailable."}
             
             status = "Normal"
-            if current_vix > 30: status = "Extreme Fear"
-            elif current_vix > 20: status = "High Volatility"
-            elif current_vix < 12: status = "Complacent"
+            explanation = "Volatility is within normal range (12-20). Standard trading rules apply."
+            
+            if current_vix > 30: 
+                status = "Extreme Fear"
+                explanation = "VIX > 30 indicates panic. \nImpact: High risk of whipsaws. Stopped out easily. Cash is preferred."
+            elif current_vix > 20: 
+                status = "High Volatility"
+                explanation = "VIX > 20 suggests elevated risk. \nImpact: Reduce position sizes (50%). Widen stops slightly or wait for calm."
+            elif current_vix < 12: 
+                status = "Complacent"
+                explanation = "VIX < 12 indicates complacency. \nImpact: Market may be overextended. Be careful chasing breakouts."
+                
+            logger.info(f"VIX Analysis: {current_vix:.2f} ({status})")
                 
             return {
-                "current_vix": current_vix,
+                "current_vix": round(float(current_vix), 2),
                 "status": status,
-                "fear_level": status
+                "fear_level": status,
+                "explanation": explanation
             }
             
         except Exception as e:
             logger.error(f"Error analyzing VIX: {e}")
-            return {"current_vix": 0, "status": "Unknown", "fear_level": "Unknown"}
+            return {"current_vix": 0.0, "status": "Unknown", "fear_level": "Unknown", "explanation": "Error analyzing VIX."}
 
 
     def calculate_breadth_metrics(self) -> Dict:

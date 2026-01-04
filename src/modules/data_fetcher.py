@@ -12,6 +12,7 @@ import requests
 import io
 from io import BytesIO
 import boto3
+import json
 
 # Alpaca Imports
 from alpaca.data.historical import StockHistoricalDataClient
@@ -52,6 +53,8 @@ class DataFetcher:
             except Exception as e:
                 logger.error(f"Failed to initialize Alpaca Client: {e}")
                 self.client = None
+        
+        self._load_sector_cache()
 
     def fetch_market_data(self, tickers: List[str], days: int = 400, use_cache: bool = True) -> pd.DataFrame:
         """
@@ -444,8 +447,46 @@ class DataFetcher:
         df.set_index('timestamp', inplace=True)
         return df
 
+    
+    def _load_sector_cache(self):
+        """Load static sector map from S3"""
+        try:
+            key = "min_data/sectors.json"
+            response = self.s3_client.get_object(Bucket=S3_BUCKET, Key=key)
+            content = response['Body'].read().decode('utf-8')
+            self.sector_cache = json.loads(content)
+            logger.info(f"Loaded {len(self.sector_cache)} sectors from S3 cache.")
+        except Exception as e:
+            logger.error(f"Failed to load static sector cache from S3 (Key: {key}): {e}")
+            self.sector_cache = {}
+
     def _process_fundamental_data(self, symbol: str, info: Dict) -> FundamentalData:
-        """Placeholder for Fundamentals (Alpaca Data API is mostly Price/Vol)"""
+        """Fetch Fundamentals using S3 Cache then yfinance fallback"""
+        sector = 'N/A'
+        
+        # 1. Try S3 Cache
+        if hasattr(self, 'sector_cache') and symbol in self.sector_cache:
+            sector = self.sector_cache[symbol]
+        
+        # 2. Try yfinance (with session fix)
+        if sector == 'N/A' or not sector: 
+            try:
+                # Use yfinance for Sector (Lightweight)
+                import yfinance as yf
+                import requests
+    
+                session = requests.Session()
+                session.headers.update({
+             'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                })
+    
+                ticker = yf.Ticker(symbol, session=session)
+                # Use fast_info if available or info
+                sector = ticker.info.get('sector', 'N/A')
+            except Exception as e:
+                logger.warning(f"Sector fetch failed for {symbol}: {e}")
+                pass
+            
         return FundamentalData(
             symbol=symbol,
             eps_growth=0.0,
@@ -456,7 +497,7 @@ class DataFetcher:
             dividend_yield=0.0,
             current_ratio=0.0,
             earnings_date=None,
-            sector='N/A'
+            sector=sector
         )
     
     def _process_technical_data(self, symbol: str, df: pd.DataFrame) -> TechnicalData:

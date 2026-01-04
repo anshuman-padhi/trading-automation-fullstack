@@ -139,13 +139,14 @@ VIX ANALYSIS:
 - Current VIX: {vix.get('current_vix', 0):.2f}
 - VIX Status: {vix.get('status', 'Unknown')}
 - Market Fear Level: {vix.get('fear_level', 'Unknown')}
+- Impact: {vix.get('explanation', 'N/A')}
 
 RECOMMENDATION:
 Exposure Guidance: {env.get('exposure_guidance', 'N/A')}
 Position Sizing: {env.get('recommendation', 'Continue monitoring market conditions.')}
 
 {'=' * 70}
-This is an automated report from your Trading Automation System.
+This is an automated report from your QuantZ Trading System.
 """
     return report
 
@@ -184,13 +185,16 @@ def format_email_report_html(results):
                     </ul>
                 </div>
                 
-                <div style="width: 48%;">
+                    <div style="width: 48%;">
                     <h3 style="border-bottom: 1px solid #ddd; padding-bottom: 5px;">VIX Analysis</h3>
                     <ul style="list-style-type: none; padding-left: 0;">
                         <li style="padding: 5px 0; border-bottom: 1px solid #eee;">Current VIX: <strong>{vix.get('current_vix', 0):.2f}</strong></li>
                         <li style="padding: 5px 0; border-bottom: 1px solid #eee;">Status: <strong>{vix.get('status', 'Unknown')}</strong></li>
                         <li style="padding: 5px 0; border-bottom: 1px solid #eee;">Fear Level: <strong>{vix.get('fear_level', 'Unknown')}</strong></li>
                     </ul>
+                    <p style="font-size: 0.9em; background-color: #f8f9fa; padding: 10px; border-radius: 4px;">
+                        <strong>Impact:</strong> {vix.get('explanation', '')}
+                    </p>
                 </div>
             </div>
             
@@ -202,7 +206,7 @@ def format_email_report_html(results):
             </div>
             
             <p style="font-size: 0.8em; color: #999; text-align: center; margin-top: 30px;">
-                Automated Report | QuantX Trading System
+                Automated Report | QuantZ Trading Lab
             </p>
         </div>
     </body>

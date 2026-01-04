@@ -30,7 +30,7 @@ pip install \
     --python-version 3.11 \
     --only-binary=:all: \
     --upgrade \
-    requests python-dotenv alpaca-py
+    requests python-dotenv alpaca-py yfinance lxml
 
 # Prune heavy libraries provided by Lambda Layers (pandas, numpy) to save space and avoid conflicts
 echo "Pruning pandas and numpy (provided by Layer)..."
