@@ -64,5 +64,8 @@ Comprehensive automated trading system deploying a Momentum + Regime-Based Strat
 *   **Handlers**: `aws/lambda/`
 *   **Scripts**: `aws/scripts/`
 
+## License
+Distrubuted under the MIT License. See `LICENSE` for more information.
+
 ---
 *Project Status: Deployed & Live (Jan 2026)*
