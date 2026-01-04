@@ -7,7 +7,7 @@
 
 ## 🏗 System Architecture
 
-This system uses a **Hybrid Lambda Architecture** to balance cost and performance:
+The system **utilizes** a **Hybrid Lambda Architecture** to balance cost and performance:
 
 | Function | Type | Runtime | Why? |
 |----------|------|---------|------|
@@ -51,7 +51,7 @@ Because `stock-screener` and `ml-trainer` run on Docker, their images must be bu
 *   Pushes it to your private ECR repository.
 
 ### 2. Deploy Lambda Functions
-This utility script handles packaging Zip functions, creating/updating Lambda configs, and wiring up the Docker images.
+**Packages** Zip functions, **creates/updates** Lambda configs, and **wires up** the Docker images using this utility script.
 
 **Command:**
 ```bash
@@ -64,7 +64,7 @@ This utility script handles packaging Zip functions, creating/updating Lambda co
 *   Updates environment variables.
 
 ### 3. Configure EventBridge Schedules
-Sets up the cron jobs that drive the automation.
+**Configures** the cron jobs that drive the automation.
 
 **Command:**
 ```bash
