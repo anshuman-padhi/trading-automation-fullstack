@@ -10,34 +10,34 @@ The system operates as a serverless application on AWS.
 ```mermaid
 graph TD
     subgraph "Local Environment (User Machine/EC2)"
-        LocalScript[scripts/utils/refresh_static_data.sh]
+        LocalScript["scripts/utils/refresh_static_data.sh"]
         LocalScript -->|Uploads JSON| S3
     end
 
     subgraph "External Data Providers"
-        Alpaca[Alpaca Market Data API]
-        Yahoo[Yahoo Finance API]
-        YahooFallback[Direct API Fallback]
+        Alpaca["Alpaca Market Data API"]
+        Yahoo["Yahoo Finance API"]
+        YahooFallback["Direct API Fallback"]
     end
 
     subgraph "AWS Cloud (us-east-1)"
-        EventBridge[Amazon EventBridge]
+        EventBridge["Amazon EventBridge"]
         
         subgraph "Lambda Functions"
-            MarketAnalysis[Market Analysis Handler]
-            StockScreener[Stock Screener Handler]
-            Dashboard[Dashboard Handler]
-            MLTrainer[ML Trainer Handler]
+            MarketAnalysis["Market Analysis Handler"]
+            StockScreener["Stock Screener Handler"]
+            Dashboard["Dashboard Handler"]
+            MLTrainer["ML Trainer Handler"]
         end
         
         subgraph "Storage (S3)"
-            S3[S3 Bucket: trading-automation-data]
-            Sectors[sectors.json]
-            VIX[vix_latest.json]
-            Reports[Reports/JSON Output]
+            S3["S3 Bucket: trading-automation-data"]
+            Sectors["sectors.json"]
+            VIX["vix_latest.json"]
+            Reports["Reports/JSON Output"]
         end
         
-        SES[Amazon SES (Email)]
+        SES["Amazon SES (Email)"]
     end
 
     %% Event Triggers
